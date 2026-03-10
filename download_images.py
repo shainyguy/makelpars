@@ -79,7 +79,7 @@ for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
             temp_file = f"temp_{article_str}.png"
             with open(temp_file, "wb") as f:
                 f.write(shp_old._data())
-            pil_img = PILImage.open(temp_file)
+            pil_img = PILImage.open(temp_file).convert("RGB")  # <-- конвертируем в RGB
             pil_img = scale_image_to_cell(pil_img)
             buffer = BytesIO()
             pil_img.save(buffer, format="JPEG")
@@ -108,7 +108,7 @@ for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
     if img_url:
         try:
             img_data = requests.get(img_url, headers=HEADERS, timeout=10).content
-            pil_img = PILImage.open(BytesIO(img_data)).convert("RGB")
+            pil_img = PILImage.open(BytesIO(img_data)).convert("RGB")  # конвертируем в RGB
             pil_img = scale_image_to_cell(pil_img)
             buffer = BytesIO()
             pil_img.save(buffer, format="JPEG")
