@@ -41,19 +41,29 @@ print("Связано картинок:", len(images_map))
 
 def search_image(article):
 
-    url = f"https://www.vseinstrumenti.ru/search/?q={article}+makel"
+    query = f"makel {article}"
+
+    url = f"https://www.google.com/search?q={query}&tbm=isch"
+
+    headers = {
+        "User-Agent":"Mozilla/5.0"
+    }
 
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10)
+
         soup = BeautifulSoup(r.text,"html.parser")
 
-        img = soup.find("img")
+        imgs = soup.find_all("img")
 
-        if img and "src" in img.attrs:
-            return img["src"]
+        for img in imgs:
+            src = img.get("src")
 
-    except:
-        pass
+            if src and src.startswith("http"):
+                return src
+
+    except Exception as e:
+        print("Ошибка поиска:", e)
 
     return None
 
@@ -133,3 +143,4 @@ for r in range(2, ws_new.max_row+1):
 wb_new.save("new_with_images.xlsx")
 
 print("Файл создан: new_with_images.xlsx")
+
