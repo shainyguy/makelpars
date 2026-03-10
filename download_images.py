@@ -18,7 +18,7 @@ HEADERS = {"User-Agent":"Mozilla/5.0"}
 START_ROW = 2
 SLEEP_TIME = 1
 
-# Размер ячейки (в пикселях, примерно)
+# Размер ячейки (приблизительно)
 CELL_WIDTH = 100
 CELL_HEIGHT = 100
 
@@ -56,7 +56,7 @@ def get_image_from_site(search_url, img_selector="img"):
         return None
     return None
 
-# Функция масштабирования картинки под ячейку
+# Функция масштабирования под ячейку
 def scale_image_to_cell(pil_img):
     img_w, img_h = pil_img.size
     scale_w = CELL_WIDTH / img_w
@@ -64,7 +64,7 @@ def scale_image_to_cell(pil_img):
     scale = min(scale_w, scale_h, 1)  # не увеличиваем больше 100%
     new_w = int(img_w * scale)
     new_h = int(img_h * scale)
-    return pil_img.resize((new_w, new_h), PILImage.ANTIALIAS)
+    return pil_img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
 
 # Основной цикл
 for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
