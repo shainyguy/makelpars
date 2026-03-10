@@ -1,3 +1,5 @@
+import requests
+from bs4 import BeautifulSoup
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image
 from PIL import Image as PILImage
@@ -5,11 +7,6 @@ from io import BytesIO
 
 OLD_FILE = "old.xlsx"
 NEW_FILE = "new.xlsx"
-RESULT_FILE = "new_with_images.xlsx"
-
-# размеры под ячейку
-MAX_W = 120
-MAX_H = 120
 
 wb_old = load_workbook(OLD_FILE)
 ws_old = wb_old.active
@@ -18,70 +15,121 @@ wb_new = load_workbook(NEW_FILE)
 ws_new = wb_new.active
 
 images = ws_old._images
-images_by_article = {}
 
-print("Найдено изображений:", len(images))
+print("Картинок в old:", len(images))
 
-# собираем картинки из old
+images_map = {}
+
+# связываем картинки с артикулами
 for img in images:
 
     row = img.anchor._from.row + 1
 
-    article = ws_old.cell(row=row, column=2).value
+    article = ws_old.cell(row=row, column=3).value
 
     if not article:
-        # если строка пустая ищем ближайшую выше
-        for r in range(row, row-5, -1):
-            article = ws_old.cell(row=r, column=2).value
+        for r in range(row, row-6, -1):
+            article = ws_old.cell(r,3).value
             if article:
                 break
 
     if article:
-        images_by_article[str(article).strip()] = img
+        images_map[str(article).strip()] = img
 
-print("Связано по артикулам:", len(images_by_article))
+print("Связано картинок:", len(images_map))
 
-# вставляем в new
+
+def search_image(article):
+
+    url = f"https://www.vseinstrumenti.ru/search/?q={article}+makel"
+
+    try:
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text,"html.parser")
+
+        img = soup.find("img")
+
+        if img and "src" in img.attrs:
+            return img["src"]
+
+    except:
+        pass
+
+    return None
+
+
 inserted = 0
+downloaded = 0
 
-for row in range(2, ws_new.max_row + 1):
 
-    article = ws_new.cell(row=row, column=2).value
+for r in range(2, ws_new.max_row+1):
+
+    article = ws_new.cell(r,2).value
 
     if not article:
         continue
 
     article = str(article).strip()
 
-    if article in images_by_article:
+    # 1 перенос из old
+    if article in images_map:
 
-        img = images_by_article[article]
+        img = images_map[article]
 
         pil = PILImage.open(BytesIO(img._data()))
         pil = pil.convert("RGB")
 
-        # масштабирование под ячейку
-        pil.thumbnail((MAX_W, MAX_H))
+        pil.thumbnail((120,120))
 
-        buffer = BytesIO()
-        pil.save(buffer, format="JPEG")
-        buffer.seek(0)
+        buf = BytesIO()
+        pil.save(buf,"JPEG")
+        buf.seek(0)
 
-        new_img = Image(buffer)
+        new_img = Image(buf)
 
-        ws_new.add_image(new_img, f"A{row}")
+        ws_new.add_image(new_img,f"A{r}")
 
         inserted += 1
 
-print("Вставлено картинок:", inserted)
+    # 2 поиск в интернете
+    else:
 
-# немного увеличим ширину и высоту
+        url = search_image(article)
+
+        if url:
+
+            try:
+
+                img_data = requests.get(url).content
+
+                pil = PILImage.open(BytesIO(img_data))
+                pil = pil.convert("RGB")
+
+                pil.thumbnail((120,120))
+
+                buf = BytesIO()
+                pil.save(buf,"JPEG")
+                buf.seek(0)
+
+                new_img = Image(buf)
+
+                ws_new.add_image(new_img,f"A{r}")
+
+                downloaded += 1
+
+            except:
+                pass
+
+
+print("Перенесено из old:", inserted)
+print("Скачано из интернета:", downloaded)
+
 ws_new.column_dimensions["A"].width = 20
 
-for r in range(2, ws_new.max_row + 1):
+for r in range(2, ws_new.max_row+1):
     ws_new.row_dimensions[r].height = 90
 
-wb_new.save(RESULT_FILE)
 
-print("Готово:", RESULT_FILE)
+wb_new.save("new_with_images.xlsx")
 
+print("Файл создан: new_with_images.xlsx")
