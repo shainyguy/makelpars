@@ -16,9 +16,11 @@ OUTPUT_FILE = "new_with_images.xlsx"
 # Настройки
 HEADERS = {"User-Agent":"Mozilla/5.0"}
 START_ROW = 2
-IMG_WIDTH = 90
-IMG_HEIGHT = 90
-SLEEP_TIME = 1  # секунды между запросами
+SLEEP_TIME = 1
+
+# Размер ячейки (в пикселях, примерно)
+CELL_WIDTH = 100
+CELL_HEIGHT = 100
 
 # Загрузка Excel
 df_new = pd.read_excel(NEW_FILE)
@@ -29,7 +31,7 @@ ws_new = wb_new.active
 wb_old = load_workbook(OLD_FILE)
 ws_old = wb_old.active
 
-# Собираем существующие картинки из old.xlsx
+# Словарь существующих картинок
 existing_images = {}
 for shp in ws_old._images:
     try:
@@ -42,29 +44,27 @@ for shp in ws_old._images:
 
 print(f"Найдено {len(existing_images)} старых картинок")
 
-# Функции поиска
+# Функция поиска картинки на сайте
 def get_image_from_site(search_url, img_selector="img"):
     try:
         r = requests.get(search_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         img = soup.select_one(img_selector)
-        if img and img.get("src"):
+        if img and img.get("src") and img["src"].startswith("http"):
             return img["src"]
     except:
         return None
     return None
 
-def get_google_image_url(query):
-    try:
-        url = f"https://www.google.com/search?tbm=isch&q={query}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        img = soup.find("img")
-        if img and img.get("src"):
-            return img["src"]
-    except:
-        return None
-    return None
+# Функция масштабирования картинки под ячейку
+def scale_image_to_cell(pil_img):
+    img_w, img_h = pil_img.size
+    scale_w = CELL_WIDTH / img_w
+    scale_h = CELL_HEIGHT / img_h
+    scale = min(scale_w, scale_h, 1)  # не увеличиваем больше 100%
+    new_w = int(img_w * scale)
+    new_h = int(img_h * scale)
+    return pil_img.resize((new_w, new_h), PILImage.ANTIALIAS)
 
 # Основной цикл
 for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
@@ -72,19 +72,22 @@ for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
         continue
     article_str = str(article).strip()
 
-    # 1. Картинка из old.xlsx
+    # 1. Старая картинка
     if article_str in existing_images:
         shp_old = existing_images[article_str]
         try:
             temp_file = f"temp_{article_str}.png"
             with open(temp_file, "wb") as f:
                 f.write(shp_old._data())
-            picture = XLImage(temp_file)
-            picture.width = IMG_WIDTH
-            picture.height = IMG_HEIGHT
+            pil_img = PILImage.open(temp_file)
+            pil_img = scale_image_to_cell(pil_img)
+            buffer = BytesIO()
+            pil_img.save(buffer, format="JPEG")
+            buffer.seek(0)
+            picture = XLImage(buffer)
             ws_new.add_image(picture, f"A{i}")
-            print(f"[OLD] Картинка перенесена: {article_str}")
             os.remove(temp_file)
+            print(f"[OLD] Картинка перенесена: {article_str}")
             continue
         except Exception as e:
             print(f"[ERROR] Не удалось вставить старую картинку: {article_str}, причина: {e}")
@@ -101,21 +104,16 @@ for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
         if img_url:
             break
 
-    # 3. Google Images
-    if not img_url:
-        img_url = get_google_image_url(f"{article_str} makel")
-
-    # 4. Вставка картинки
+    # 3. Вставка картинки
     if img_url:
         try:
             img_data = requests.get(img_url, headers=HEADERS, timeout=10).content
             pil_img = PILImage.open(BytesIO(img_data)).convert("RGB")
+            pil_img = scale_image_to_cell(pil_img)
             buffer = BytesIO()
             pil_img.save(buffer, format="JPEG")
             buffer.seek(0)
             picture = XLImage(buffer)
-            picture.width = IMG_WIDTH
-            picture.height = IMG_HEIGHT
             ws_new.add_image(picture, f"A{i}")
             print(f"[WEB] Картинка загружена: {article_str}")
         except Exception as e:
