@@ -5,7 +5,7 @@ from io import BytesIO
 
 OLD_FILE = "old.xlsx"
 NEW_FILE = "new.xlsx"
-RESULT_FILE = "result.xlsx"
+RESULT_FILE = "new_with_images.xlsx"
 
 # размеры под ячейку
 MAX_W = 120
@@ -84,3 +84,4 @@ for r in range(2, ws_new.max_row + 1):
 wb_new.save(RESULT_FILE)
 
 print("Готово:", RESULT_FILE)
+
