@@ -1,0 +1,28 @@
+name: Download Images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run script
+      run: python download_images.py
+
+    - name: Upload output
+      uses: actions/upload-artifact@v3
+      with:
+        name: new_with_images
+        path: new_with_images.xlsx
