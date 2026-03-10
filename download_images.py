@@ -7,7 +7,7 @@ from io import BytesIO
 import time
 
 # Параметры файлов
-OLD_FILE = "old.xls"    # файл с уже привязанными картинками
+OLD_FILE = "old.xlsx"    # файл с уже привязанными картинками
 NEW_FILE = "new.xlsx"   # файл, куда нужно вставлять картинки
 OUTPUT_FILE = "new_with_images.xlsx"
 
@@ -120,4 +120,5 @@ for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
 
 # Сохраняем новый Excel
 wb_new.save(OUTPUT_FILE)
+
 print("Готово! Все картинки обработаны и сохранены в", OUTPUT_FILE)
