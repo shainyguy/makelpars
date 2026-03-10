@@ -1,128 +1,86 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.drawing.image import Image as XLImage
-from io import BytesIO
+from openpyxl.drawing.image import Image
 from PIL import Image as PILImage
-import time
-import os
+from io import BytesIO
 
-# Файлы
 OLD_FILE = "old.xlsx"
 NEW_FILE = "new.xlsx"
-OUTPUT_FILE = "new_with_images.xlsx"
+RESULT_FILE = "result.xlsx"
 
-# Настройки
-HEADERS = {"User-Agent":"Mozilla/5.0"}
-START_ROW = 2
-SLEEP_TIME = 1
+# размеры под ячейку
+MAX_W = 120
+MAX_H = 120
 
-# Размер ячейки (приблизительно)
-CELL_WIDTH = 100
-CELL_HEIGHT = 100
-
-# Загрузка Excel
-df_new = pd.read_excel(NEW_FILE)
-wb_new = load_workbook(NEW_FILE)
-ws_new = wb_new.active
-
-# Загрузка старого файла
 wb_old = load_workbook(OLD_FILE)
 ws_old = wb_old.active
 
-# Словарь существующих картинок
-existing_images = {}
-for shp in ws_old._images:
-    try:
-        row = shp.anchor._from.row + 1
-        article = ws_old.cell(row=row, column=2).value
-        if article:
-            existing_images[str(article).strip()] = shp
-    except:
+wb_new = load_workbook(NEW_FILE)
+ws_new = wb_new.active
+
+images = ws_old._images
+images_by_article = {}
+
+print("Найдено изображений:", len(images))
+
+# собираем картинки из old
+for img in images:
+
+    row = img.anchor._from.row + 1
+
+    article = ws_old.cell(row=row, column=2).value
+
+    if not article:
+        # если строка пустая ищем ближайшую выше
+        for r in range(row, row-5, -1):
+            article = ws_old.cell(row=r, column=2).value
+            if article:
+                break
+
+    if article:
+        images_by_article[str(article).strip()] = img
+
+print("Связано по артикулам:", len(images_by_article))
+
+# вставляем в new
+inserted = 0
+
+for row in range(2, ws_new.max_row + 1):
+
+    article = ws_new.cell(row=row, column=2).value
+
+    if not article:
         continue
 
-print(f"Найдено {len(existing_images)} старых картинок")
+    article = str(article).strip()
 
-# Функция поиска картинки на сайте
-def get_image_from_site(search_url, img_selector="img"):
-    try:
-        r = requests.get(search_url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        img = soup.select_one(img_selector)
-        if img and img.get("src") and img["src"].startswith("http"):
-            return img["src"]
-    except:
-        return None
-    return None
+    if article in images_by_article:
 
-# Функция масштабирования под ячейку
-def scale_image_to_cell(pil_img):
-    img_w, img_h = pil_img.size
-    scale_w = CELL_WIDTH / img_w
-    scale_h = CELL_HEIGHT / img_h
-    scale = min(scale_w, scale_h, 1)  # не увеличиваем больше 100%
-    new_w = int(img_w * scale)
-    new_h = int(img_h * scale)
-    return pil_img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
+        img = images_by_article[article]
 
-# Основной цикл
-for i, article in enumerate(df_new.iloc[:,1], start=START_ROW):
-    if pd.isna(article):
-        continue
-    article_str = str(article).strip()
+        pil = PILImage.open(BytesIO(img._data()))
+        pil = pil.convert("RGB")
 
-    # 1. Старая картинка
-    if article_str in existing_images:
-        shp_old = existing_images[article_str]
-        try:
-            temp_file = f"temp_{article_str}.png"
-            with open(temp_file, "wb") as f:
-                f.write(shp_old._data())
-            pil_img = PILImage.open(temp_file).convert("RGB")  # <-- конвертируем в RGB
-            pil_img = scale_image_to_cell(pil_img)
-            buffer = BytesIO()
-            pil_img.save(buffer, format="JPEG")
-            buffer.seek(0)
-            picture = XLImage(buffer)
-            ws_new.add_image(picture, f"A{i}")
-            os.remove(temp_file)
-            print(f"[OLD] Картинка перенесена: {article_str}")
-            continue
-        except Exception as e:
-            print(f"[ERROR] Не удалось вставить старую картинку: {article_str}, причина: {e}")
+        # масштабирование под ячейку
+        pil.thumbnail((MAX_W, MAX_H))
 
-    # 2. Поиск на сайтах
-    img_url = None
-    sites = [
-        f"https://www.vseinstrumenti.ru/search/?q={article_str}+makel",
-        f"https://www.petrovich.ru/search/?q={article_str}+makel",
-        f"https://rs24.ru/search/?q={article_str}+makel"
-    ]
-    for site in sites:
-        img_url = get_image_from_site(site)
-        if img_url:
-            break
+        buffer = BytesIO()
+        pil.save(buffer, format="JPEG")
+        buffer.seek(0)
 
-    # 3. Вставка картинки
-    if img_url:
-        try:
-            img_data = requests.get(img_url, headers=HEADERS, timeout=10).content
-            pil_img = PILImage.open(BytesIO(img_data)).convert("RGB")  # конвертируем в RGB
-            pil_img = scale_image_to_cell(pil_img)
-            buffer = BytesIO()
-            pil_img.save(buffer, format="JPEG")
-            buffer.seek(0)
-            picture = XLImage(buffer)
-            ws_new.add_image(picture, f"A{i}")
-            print(f"[WEB] Картинка загружена: {article_str}")
-        except Exception as e:
-            print(f"[ERROR] Не удалось вставить: {article_str}, причина: {e}")
-    else:
-        print(f"[NOT FOUND] Картинка не найдена: {article_str}")
+        new_img = Image(buffer)
 
-    time.sleep(SLEEP_TIME)
+        ws_new.add_image(new_img, f"A{row}")
 
-# Сохраняем Excel
-wb_new.save(OUTPUT_FILE)
-print("Готово! Все картинки обработаны и сохранены в", OUTPUT_FILE)
+        inserted += 1
+
+print("Вставлено картинок:", inserted)
+
+# немного увеличим ширину и высоту
+ws_new.column_dimensions["A"].width = 20
+
+for r in range(2, ws_new.max_row + 1):
+    ws_new.row_dimensions[r].height = 90
+
+wb_new.save(RESULT_FILE)
+
+print("Готово:", RESULT_FILE)
